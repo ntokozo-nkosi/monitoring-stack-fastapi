@@ -7,7 +7,7 @@ This project sets up a complete monitoring and observability stack using Docker 
 The stack consists of four main components:
 
 - **FastAPI Application**: A simple web API that serves as our application to monitor
-- **Prometheus**: Collects and stores metrics from the FastAPI app
+- **Prometheus**: Collects and stores metrics from the FastAPI app (internal access only)
 - **Grafana**: Provides dashboards and visualization for metrics and logs
 - **Loki**: Aggregates and stores application logs
 
@@ -44,9 +44,9 @@ monitoring-stack/
 
 3. **Access the services**
    - FastAPI Application: http://localhost:8000
-   - Grafana Dashboard: http://localhost:3000 (admin/admin)
-   - Prometheus: http://localhost:9090
+   - Grafana Dashboard: http://localhost:3000 (admin/admin123)
    - Loki: http://localhost:3100
+   - Prometheus: Internal access only (accessible through Grafana)
 
 4. **Test the FastAPI app**
    ```bash
@@ -77,47 +77,66 @@ A simple web API with two endpoints:
 
 ### Docker Compose Setup (`docker-compose.yml`)
 
-Orchestrates four services in a custom network:
+Orchestrates four services across two custom networks:
 
-1. **fastapi-app-0**: Your application container
+1. **fastapi-app**: Your application container
    - Builds from the local Dockerfile
-   - Exposes port 8000
+   - Exposes port 8000 to host
    - Configured to send logs to Loki
+   - Connected to both frontend and monitoring networks
 
 2. **prometheus**: Metrics collection service
    - Scrapes metrics from the FastAPI app
    - Stores time-series data
-   - Web UI available at port 9090
+   - Internal access only (no host port binding)
+   - Connected to monitoring network only
 
 3. **grafana**: Visualization and dashboards
    - Pre-configured to connect to Prometheus and Loki
    - Persistent data storage using Docker volumes
    - Web UI available at port 3000
+   - Connected to both frontend and monitoring networks
 
 4. **loki**: Log aggregation service
    - Collects logs from all containers
    - Provides log querying capabilities
    - Available at port 3100
+   - Connected to monitoring network only
 
 ## 🔧 Configuration Details
+
+### Network Architecture
+
+The stack uses two Docker networks for improved security and organization:
+
+- **frontend**: Network for user-facing services (FastAPI, Grafana)
+- **monitoring**: Network for internal monitoring services (Prometheus, Loki)
+
+Services are strategically placed:
+- FastAPI and Grafana: Both networks (can communicate with all services)
+- Prometheus and Loki: Monitoring network only (internal communication)
 
 ### Logging Configuration
 
 All services are configured to send logs to Loki using the Docker Loki logging driver:
-- Logs are batched for efficiency (batch size: 100)
-- Log rotation (max 10MB per file, 3 files max)
+- Logs are batched for efficiency (batch size: 400)
+- Retry configuration (5 retries, 2s max backoff)
 - Each service has labeled logs for easy filtering
 
-### Network Setup
+### Security Features
 
-All services run in a custom bridge network named `monitoring` for secure inter-container communication.
+- **Prometheus**: No external port exposure (internal access only)
+- **Network Segmentation**: Separate networks for frontend and monitoring
+- **Graceful Shutdowns**: Configured stop signals and grace periods
 
 ## 📈 Monitoring Your Application
 
 ### Viewing Metrics in Prometheus
 
-1. Open http://localhost:9090
-2. Try these queries:
+Since Prometheus is not directly exposed, access it through Grafana:
+1. Open Grafana at http://localhost:3000
+2. Add Prometheus as a data source: http://prometheus:9090
+3. Try these queries:
    - `http_requests_total` - Total HTTP requests
    - `http_request_duration_seconds` - Request duration
    - `rate(http_requests_total[5m])` - Request rate per second
@@ -125,10 +144,11 @@ All services run in a custom bridge network named `monitoring` for secure inter-
 ### Creating Dashboards in Grafana
 
 1. Open http://localhost:3000
-2. Log in with admin/admin
-3. Add Prometheus as a data source: http://prometheus:9090
-4. Add Loki as a data source: http://loki:3100
-5. Create dashboards combining metrics and logs
+2. Log in with admin/admin123
+3. Add data sources:
+   - Prometheus: http://prometheus:9090
+   - Loki: http://loki:3100
+4. Create dashboards combining metrics and logs
 
 ### Viewing Logs in Grafana
 
@@ -152,7 +172,7 @@ REQUEST_DURATION = Histogram('app_request_duration_seconds', 'Request duration')
 
 Check individual service logs:
 ```bash
-docker-compose logs fastapi-app-0
+docker-compose logs fastapi-app
 docker-compose logs prometheus
 docker-compose logs grafana
 docker-compose logs loki
@@ -173,15 +193,16 @@ docker-compose down -v
 
 ### Common Issues
 
-1. **Port conflicts**: Ensure ports 3000, 8000, 9090, and 3100 are not in use
+1. **Port conflicts**: Ensure ports 3000, 8000, and 3100 are not in use
 2. **Docker permissions**: Run with `sudo` if you encounter permission issues
 3. **Service not starting**: Check logs with `docker-compose logs [service-name]`
 
 ### Health Checks
 
 - FastAPI: `curl http://localhost:8000/health` (if implemented)
-- Prometheus: `curl http://localhost:9090/-/healthy`
+- Prometheus: Check through Grafana (no direct access)
 - Grafana: Check if web UI loads at http://localhost:3000
+- Loki: `curl http://localhost:3100/ready`
 
 ## 📚 Next Steps
 
