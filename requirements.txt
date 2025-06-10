@@ -1,0 +1,4 @@
+# app/requirements.txt
+fastapi
+uvicorn
+prometheus-fastapi-instrumentator
