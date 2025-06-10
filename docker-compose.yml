@@ -37,8 +37,10 @@ services:
     container_name: prometheus
     restart: unless-stopped
     # Only expose internally (no host binding)
-    expose:
-      - '9090'
+    # expose:
+    #   - '9090'
+    ports:
+      - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -48,6 +50,7 @@ services:
       - '--log.level=${LOG_LEVEL:-info}'
     depends_on:
       - loki
+      - node-exporter
     stop_signal: SIGTERM
     stop_grace_period: 5s
     healthcheck:
@@ -115,6 +118,39 @@ services:
     networks:
       - monitoring
 
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    user: '65534:65534'
+    pid: 'host'
+    # Expose internally only
+    expose:
+      - '9100'
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.textfile.directory=/var/lib/node_exporter/textfile_collector'
+    volumes:
+      - '/:/host:ro'
+      - 'node_exporter_textfiles:/var/lib/node_exporter/textfile_collector'
+    stop_signal: SIGTERM
+    stop_grace_period: 5s
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:9100/metrics | grep node_exporter_build_info']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+        loki-batch-size: "400"
+        loki-retries: "5"
+        loki-max-backoff: "2s"
+        labels: "service=node-exporter"
+    networks:
+      - monitoring
+
 networks:
   frontend:
     driver: bridge
@@ -124,5 +160,6 @@ networks:
 volumes:
   grafana_data: {}
   prometheus_data: {}
+  node_exporter_textfiles: {}
   app_logs: {}
 
